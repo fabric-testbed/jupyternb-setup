@@ -39,6 +39,25 @@ export FABRIC_SLICE_PUBLIC_KEY_FILE=/home/fabric/work/fabric_config/slice_key.pu
 export FABRIC_LOG_LEVEL=INFO
 export FABRIC_LOG_FILE=/tmp/fablib/fablib.log
 ```
+NOTE: Defaults are configurable via the environment variables passed to the container on JH install as below:
+```
+singleuser:
+  image:
+    name: fabrictestbed/jupyter-notebook
+    tag: 1.3.2
+  extraEnv:
+    FABRIC_CREDMGR_HOST: cm.fabric-testbed.net
+    FABRIC_ORCHESTRATOR_HOST: orchestrator.fabric-testbed.net
+    FABRIC_TOKEN_LOCATION: /home/fabric/.tokens.json
+    FABRIC_NOTEBOOK_LOCATION: /home/fabric/work
+    FABRIC_NOTEBOOK_TAGS: rel1.3.3
+    FABRIC_NOTEBOOK_REPO_URL: https://github.com/fabric-testbed/jupyter-examples/archive/refs/tags/
+    FABRIC_CONFIG_LOCATION: /home/fabric/work/fabric_config
+    FABRIC_BASTION_HOST: bastion-1.fabric-testbed.net
+    FABRIC_BASTION_PRIVATE_KEY_NAME: fabric-bastion-key
+    FABRIC_SLICE_PRIVATE_KEY_NAME: slice_key
+    FABRIC_SLICE_PUBLIC_KEY_NAME: slice_key.pub
+```
 #### Custom Python Packages: `requirements.txt`
 - Creates an empty `requirements.txt` file if it does not exist. Any packages specified in this file are installed when the user container is spawned.
 #### Jupyter Examples: `fabric_config.json`
