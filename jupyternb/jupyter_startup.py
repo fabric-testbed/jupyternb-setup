@@ -38,6 +38,7 @@ import pip
 
 
 class JupyterStartup:
+    DEFAULT_URL = "default"
     DEFAULT_NOTEBOOK_LOCATION = "/home/fabric/work/"
     DEFAULT_FABRIC_CONFIG_LOCATION = "/home/fabric/work/fabric_config"
     DEFAULT_REQUIREMENTS_LOCATION = "/home/fabric/work/fabric_config/requirements.txt"
@@ -157,35 +158,54 @@ class JupyterStartup:
         url = url.split("?")[0]
         return os.path.basename(url)
 
+    def __download_file(self, file_name_release: str, location: str):
+        try:
+            print(f"Downloading the {file_name_release}")
+            file_name = wget.download(file_name_release, location)
+            print(f"Extracting the tarball for the Downloaded code: {file_name}")
+            with tarfile.open(file_name) as f:
+                f.extractall(path=location)
+            print(f"Removing the downloaded tarball")
+            os.remove(file_name)
+        except Exception as e:
+            print(f"Failed to download file: {file_name_release} at location: {location}")
+            print("Exception: " + str(e))
+            traceback.print_exc()
+
     def download_notebooks(self):
         try:
-            config_json = None
             with open(self.config_json_location) as f:
                 config_json = json.load(f)
 
-            notebook_location = self.notebook_location
-            tags = self.tags
-            file_name_release = f"{self.repo_url}/{self.tags}.tar.gz"
+            if config_json is None or len(config_json) == 0:
+                print("Nothing to download! empty config_json")
+                return
 
-            if config_json is not None and config_json.get(self.EXAMPLES) is not None:
-                if config_json.get(self.EXAMPLES)[self.LOCATION] is not None:
-                    notebook_location = config_json.get(self.EXAMPLES)[self.LOCATION]
-                if config_json.get(self.EXAMPLES)[self.URL] is not None:
-                    file_name_release = config_json.get(self.EXAMPLES)[self.URL]
+            examples = config_json.get(self.EXAMPLES)
+            if examples is None or len(examples) == 0:
+                print("Nothing to download! empty examples")
+                return
+
+            for e in examples:
+                url = e.get(self.URL)
+                location = e.get(self.LOCATION)
+                print(f"Downloading examples: {url} at {location}")
+
+                if url is None or location is None:
+                    continue
+
+                if url == self.DEFAULT_URL:
+                    file_name_release = f"{self.repo_url}/{self.tags}.tar.gz"
+                    tags = self.tags
+                else:
+                    file_name_release = url
                     file_name = self.get_url_file_name(url=file_name_release)
                     tags = re.sub('.tar.gz|.zip', '', file_name)
 
-            if os.path.exists(f"{notebook_location}/jupyter-examples-{tags}"):
-                return
+                if os.path.exists(f"{location}/jupyter-examples-{tags}"):
+                    continue
 
-            print(f"Downloading the {file_name_release}")
-            file_name = wget.download(file_name_release, notebook_location)
-            print(f"Extracting the tarball for the Downloaded code: {file_name}")
-            with tarfile.open(file_name) as f:
-                f.extractall(path=notebook_location)
-            print(f"Removing the downloaded tarball")
-            os.remove(file_name)
-
+                self.__download_file(file_name_release=file_name_release, location=location)
         except Exception as e:
             print("Failed to download github repository for notebooks")
             print("Exception: " + str(e))
@@ -215,10 +235,10 @@ class JupyterStartup:
     def create_config_file(self):
         try:
             config_json = {
-                self.EXAMPLES: {
-                    self.URL: f"{self.repo_url}/{self.tags}.tar.gz",
+                self.EXAMPLES: [{
+                    self.URL: self.DEFAULT_URL,
                     self.LOCATION: self.notebook_location
-                }
+                }]
             }
 
             with atomic_write(self.config_json_location, overwrite=True) as f:
