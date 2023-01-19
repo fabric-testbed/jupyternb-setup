@@ -189,7 +189,6 @@ class JupyterStartup:
             for e in examples:
                 url = e.get(self.URL)
                 location = e.get(self.LOCATION)
-                print(f"Downloading examples: {url} at {location}")
 
                 if url is None or location is None:
                     continue
@@ -204,7 +203,7 @@ class JupyterStartup:
 
                 if os.path.exists(f"{location}/jupyter-examples-{tags}"):
                     continue
-
+                print(f"Downloading examples: {file_name_release} at {location}")
                 self.__download_file(file_name_release=file_name_release, location=location)
         except Exception as e:
             print("Failed to download github repository for notebooks")
@@ -217,7 +216,7 @@ class JupyterStartup:
                            self.CREATED_AT: datetime.strftime(datetime.utcnow(), self.TIME_FORMAT)}
 
             with atomic_write(self.token_location, overwrite=True) as f:
-                json.dump(tokens_json, f)
+                json.dump(tokens_json, f, indent=4)
         except Exception as e:
             print("Failed to create tokens file")
             print("Exception: " + str(e))
@@ -242,7 +241,7 @@ class JupyterStartup:
             }
 
             with atomic_write(self.config_json_location, overwrite=True) as f:
-                json.dump(config_json, f)
+                json.dump(config_json, f, indent=4)
         except Exception as e:
             print("Failed to create tokens file")
             print("Exception: " + str(e))
