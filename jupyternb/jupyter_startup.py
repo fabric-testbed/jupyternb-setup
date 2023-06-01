@@ -25,7 +25,6 @@
 # Author: Komal Thareja (kthare10@renci.org)
 import json
 import os
-import stat
 import traceback
 from datetime import datetime
 
@@ -348,7 +347,13 @@ class JupyterStartup:
         self.custom_install_packages()
 
 
+class Main:
+    @staticmethod
+    def run():
+        js = JupyterStartup()
+        js.initialize()
+
+
 if __name__ == "__main__":
-    js = JupyterStartup()
-    js.initialize()
+    Main.run()
 
