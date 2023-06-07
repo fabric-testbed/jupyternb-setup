@@ -25,7 +25,6 @@
 # Author: Komal Thareja (kthare10@renci.org)
 import json
 import os
-import stat
 import traceback
 from datetime import datetime
 
@@ -94,7 +93,7 @@ class JupyterStartup:
 
         self.repo_url = os.environ.get(self.FABRIC_NOTEBOOK_REPO_URL)
         if self.repo_url is None:
-            self.repo_url = f"{self.REPO_URL}/{self.tags}.tar.gz"
+            self.repo_url = self.REPO_URL
 
         self.config_location = os.environ.get(self.FABRIC_CONFIG_LOCATION)
         if self.config_location is None:
@@ -193,18 +192,25 @@ class JupyterStartup:
                 if url is None or location is None:
                     continue
 
-                if url == self.DEFAULT_URL:
-                    file_name_release = f"{self.repo_url}/{self.tags}.tar.gz"
-                    tags = self.tags
-                else:
-                    file_name_release = url
-                    file_name = self.get_url_file_name(url=file_name_release)
-                    tags = re.sub('.tar.gz|.zip', '', file_name)
+                release_url_dict = {}
 
-                if os.path.exists(f"{location}/jupyter-examples-{tags}"):
-                    continue
-                print(f"Downloading examples: {file_name_release} at {location}")
-                self.__download_file(file_name_release=file_name_release, location=location)
+                if url == self.DEFAULT_URL:
+                    tag_list = self.tags.split(",")
+                    for tag in tag_list:
+                        release_url_dict[f"{location}/jupyter-examples-{tag}"] = f"{self.repo_url}/{tag}.tar.gz"
+
+                else:
+                    file_name = self.get_url_file_name(url=url)
+                    tag = re.sub('.tar.gz|.zip', '', file_name)
+                    release_url_dict[f"{location}/jupyter-examples-{tag}"] = url
+
+                index = 0
+                for release, url in release_url_dict.items():
+                    if os.path.exists(release):
+                        continue
+                    print(f"Downloading examples: {url} at {location}")
+                    self.__download_file(file_name_release=url, location=location)
+                    index += 1
         except Exception as e:
             print("Failed to download github repository for notebooks")
             print("Exception: " + str(e))
@@ -256,6 +262,40 @@ class JupyterStartup:
             print("Exception: " + str(e))
             traceback.print_exc()
 
+    def update_permissions(self):
+        """
+        Find the location of the key files and change their permission
+        :return:
+        """
+        # Open the file in read mode
+        with open(f"{self.config_location}/fabric_rc", 'r') as file:
+            # Read the content of the file
+            content = file.read()
+
+        # Split the content into lines
+        lines = content.splitlines()
+
+        # Process each line to extract the environment variable and its value
+        for line in lines:
+            # Ignore empty lines or lines starting with '#' (comments)
+            if line.strip() == '' or line.strip().startswith('#'):
+                continue
+
+            # Split each line into variable and value using the first occurrence of '='
+            variable, value = line.split('=', 1)
+            variable = variable.replace("export", "")
+
+            # Remove leading/trailing whitespaces from the variable and value
+            variable = variable.strip()
+            value = value.strip()
+
+            if variable in [self.FABRIC_BASTION_KEY_LOCATION, self.FABRIC_SLICE_PRIVATE_KEY_FILE]:
+                if os.path.exists(value):
+                    os.chmod(value, 0o600)
+            elif variable in [self.FABRIC_SLICE_PUBLIC_KEY_FILE]:
+                if os.path.exists(value):
+                    os.chmod(value, 0o644)
+
     def initialize(self):
         """
         Initialize Jupyter Notebook Container
@@ -289,26 +329,33 @@ class JupyterStartup:
             f.write(f'{ssh_key.name} {ssh_key.public_key} {ssh_key.comment}')
 
         # Default key in config directory
-        default_ssh_priv_key_config = f'{self.config_location}/{os.environ[self.FABRIC_SLICE_PRIVATE_KEY_NAME]}'
-        default_ssh_pub_key_config = f'{self.config_location}/{os.environ[self.FABRIC_SLICE_PUBLIC_KEY_NAME]}'
+        default_slice_priv_key_config = f'{self.config_location}/{os.environ[self.FABRIC_SLICE_PRIVATE_KEY_NAME]}'
+        default_slice_pub_key_config = f'{self.config_location}/{os.environ[self.FABRIC_SLICE_PUBLIC_KEY_NAME]}'
  
-        if not os.path.exists(default_ssh_priv_key_config):
-            with atomic_write(default_ssh_priv_key_config, overwrite=True) as f:
+        if not os.path.exists(default_slice_priv_key_config):
+            with atomic_write(default_slice_priv_key_config, overwrite=True) as f:
                 f.write(ssh_key.private_key)
 
-        if not os.path.exists(default_ssh_pub_key_config):
-            with atomic_write(default_ssh_pub_key_config, overwrite=True) as f:
+        if not os.path.exists(default_slice_pub_key_config):
+            with atomic_write(default_slice_pub_key_config, overwrite=True) as f:
                 f.write(f'{ssh_key.name} {ssh_key.public_key} {ssh_key.comment}')
 
-        os.chmod(f"{self.DEFAULT_PRIVATE_SSH_KEY}", 0o600)
-        os.chmod(f"{self.DEFAULT_PUBLIC_SSH_KEY}", 0o644)
-        os.chmod(f"{default_ssh_priv_key_config}", 0o600)
-        os.chmod(f"{default_ssh_pub_key_config}", 0o644)
+        os.chmod(self.DEFAULT_PRIVATE_SSH_KEY, 0o600)
+        os.chmod(self.DEFAULT_PUBLIC_SSH_KEY, 0o644)
+        os.chmod(default_slice_priv_key_config, 0o600)
+        os.chmod(default_slice_pub_key_config, 0o644)
 
+        self.update_permissions()
         self.custom_install_packages()
 
 
+class Main:
+    @staticmethod
+    def run():
+        js = JupyterStartup()
+        js.initialize()
+
+
 if __name__ == "__main__":
-    js = JupyterStartup()
-    js.initialize()
+    Main.run()
 
