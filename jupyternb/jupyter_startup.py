@@ -290,9 +290,11 @@ class JupyterStartup:
             value = value.strip()
 
             if variable in [self.FABRIC_BASTION_KEY_LOCATION, self.FABRIC_SLICE_PRIVATE_KEY_FILE]:
-                os.chmod(value, 0o600)
+                if os.path.exists(value):
+                    os.chmod(value, 0o600)
             elif variable in [self.FABRIC_SLICE_PUBLIC_KEY_FILE]:
-                os.chmod(value, 0o644)
+                if os.path.exists(value):
+                    os.chmod(value, 0o644)
 
     def initialize(self):
         """
