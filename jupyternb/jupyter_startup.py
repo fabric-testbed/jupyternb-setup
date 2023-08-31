@@ -267,6 +267,8 @@ class JupyterStartup:
         Find the location of the key files and change their permission
         :return:
         """
+        if not os.path.exists(f"{self.config_location}/fabric_rc"):
+            return
         # Open the file in read mode
         with open(f"{self.config_location}/fabric_rc", 'r') as file:
             # Read the content of the file
