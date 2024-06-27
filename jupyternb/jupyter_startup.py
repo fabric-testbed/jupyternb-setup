@@ -107,9 +107,28 @@ class JupyterStartup:
         if self.config_json_location is None:
             self.config_json_location = self.DEFAULT_FABRIC_CONFIG_JSON_LOCATION
 
-    def create_config_dir(self):
+    def create_config_dir(self, dir_only: bool = True):
+        """
+        Create a configuration directory and optionally populate environment files.
+
+        This method creates a directory specified by `self.config_location` and optionally populates
+        environment files based on environment variables. It sets up necessary configurations for
+        Fabric operations including credentials, keys, logging settings, and SSH configurations.
+
+        :param dir_only: If True (default), only create the directory without populating environment files.
+                         If False, populate environment files based on configured environment variables.
+        :type dir_only: bool
+        :raises Exception: If there is an error during directory creation or file writing.
+        """
         try:
+            # Create the configuration directory
             os.mkdir(self.config_location)
+
+            # If dir_only is True, return after creating the directory
+            if dir_only:
+                return
+
+            # Define environment variables with default or placeholder values
             environment_vars = {
                 self.FABRIC_CREDMGR_HOST: os.environ[self.FABRIC_CREDMGR_HOST],
                 self.FABRIC_ORCHESTRATOR_HOST: os.environ[self.FABRIC_ORCHESTRATOR_HOST],
@@ -123,29 +142,38 @@ class JupyterStartup:
                 self.FABRIC_LOG_LEVEL: self.DEFAULT_FABRIC_LOG_LEVEL,
                 self.FABRIC_LOG_FILE: self.DEFAULT_FABRIC_LOG_FILE
             }
+
+            # Prepare string to write to environment file
             string_to_write = ""
             for key, value in environment_vars.items():
-                if '<' in value and '>':
-                    string_to_write += f"#export {key}={value}\n"
+                if '<' in value and '>' in value:
+                    string_to_write += f"#export {key}={value}\n"  # Placeholder value comment
                 else:
-                    string_to_write += f"export {key}={value}\n"
+                    string_to_write += f"export {key}={value}\n"  # Actual value
 
+            # Write environment file atomically
             with atomic_write(f'{self.config_location}/fabric_rc', overwrite=True) as f:
                 f.write(string_to_write)
 
-            string_to_write = f"UserKnownHostsFile /dev/null\n" \
-                              f"StrictHostKeyChecking no\n" \
-                              f"ServerAliveInterval 120 \n" \
-                              f"Host bastion-?.fabric-testbed.net\n" \
-                              f"User <Update Bastion User Name>\n" \
-                              f"ForwardAgent yes\n" \
-                              f"Hostname %h\n" \
-                              f"IdentityFile {self.config_location}/{os.environ[self.FABRIC_BASTION_PRIVATE_KEY_NAME]}\n" \
-                              f"IdentitiesOnly yes\n" \
-                              f"Host * !bastion-?.fabric-testbed.net\n" \
-                              f"ProxyJump <Update Bastion User Name>@{os.environ[self.FABRIC_BASTION_HOST]}:22\n"
+            # Prepare SSH configuration string
+            ssh_config_string = (
+                f"UserKnownHostsFile /dev/null\n"
+                f"StrictHostKeyChecking no\n"
+                f"ServerAliveInterval 120 \n"
+                f"Host bastion-?.fabric-testbed.net\n"
+                f"User <Update Bastion User Name>\n"
+                f"ForwardAgent yes\n"
+                f"Hostname %h\n"
+                f"IdentityFile {self.config_location}/{os.environ[self.FABRIC_BASTION_PRIVATE_KEY_NAME]}\n"
+                f"IdentitiesOnly yes\n"
+                f"Host * !bastion-?.fabric-testbed.net\n"
+                f"ProxyJump <Update Bastion User Name>@{os.environ[self.FABRIC_BASTION_HOST]}:22\n"
+            )
+
+            # Write SSH configuration file atomically
             with atomic_write(f'{self.config_location}/ssh_config', overwrite=True) as f:
-                f.write(string_to_write)
+                f.write(ssh_config_string)
+
         except Exception as e:
             print("Failed to create config directory and default environment file")
             print("Exception: " + str(e))
@@ -269,36 +297,40 @@ class JupyterStartup:
         """
         if not os.path.exists(f"{self.config_location}/fabric_rc"):
             return
-        # Open the file in read mode
-        with open(f"{self.config_location}/fabric_rc", 'r') as file:
-            # Read the content of the file
-            content = file.read()
+        try:
+            # Open the file in read mode
+            with open(f"{self.config_location}/fabric_rc", 'r') as file:
+                # Read the content of the file
+                content = file.read()
 
-        # Split the content into lines
-        lines = content.splitlines()
+            # Split the content into lines
+            lines = content.splitlines()
 
-        # Process each line to extract the environment variable and its value
-        for line in lines:
-            # Ignore empty lines or lines starting with '#' (comments)
-            if line.strip() == '' or line.strip().startswith('#'):
-                continue
+            # Process each line to extract the environment variable and its value
+            for line in lines:
+                # Ignore empty lines or lines starting with '#' (comments)
+                if line.strip() == '' or line.strip().startswith('#'):
+                    continue
 
-            # Split each line into variable and value using the first occurrence of '='
-            variable, value = line.split('=', 1)
-            variable = variable.replace("export", "")
+                # Split each line into variable and value using the first occurrence of '='
+                variable, value = line.split('=', 1)
+                variable = variable.replace("export", "")
 
-            # Remove leading/trailing whitespaces from the variable and value
-            variable = variable.strip()
-            value = value.strip()
+                # Remove leading/trailing whitespaces from the variable and value
+                variable = variable.strip()
+                value = value.strip()
 
-            if variable in [self.FABRIC_BASTION_KEY_LOCATION, self.FABRIC_SLICE_PRIVATE_KEY_FILE]:
-                if os.path.exists(value):
-                    os.chmod(value, 0o600)
-            elif variable in [self.FABRIC_SLICE_PUBLIC_KEY_FILE]:
-                if os.path.exists(value):
-                    os.chmod(value, 0o644)
+                if variable in [self.FABRIC_BASTION_KEY_LOCATION, self.FABRIC_SLICE_PRIVATE_KEY_FILE]:
+                    if os.path.exists(value):
+                        os.chmod(value, 0o600)
+                elif variable in [self.FABRIC_SLICE_PUBLIC_KEY_FILE]:
+                    if os.path.exists(value):
+                        os.chmod(value, 0o644)
+        except Exception as e:
+            print(f"Exception occurred while updating permissions: {e}")
+            traceback.print_exc()
 
-    def initialize(self):
+    def initialize(self, sliver_keys: bool = False):
         """
         Initialize Jupyter Notebook Container
         """
@@ -310,7 +342,7 @@ class JupyterStartup:
 
         if not os.path.exists(self.config_location):
             print("Creating config directory and all files")
-            self.create_config_dir()
+            self.create_config_dir(dir_only=True)
 
         if not os.path.exists(self.requirements_location):
             print("Creating default requirements.txt")
@@ -324,28 +356,30 @@ class JupyterStartup:
         self.download_notebooks()
 
         # Create SSH Keys
-        ssh_key = FABRICSSHKey.generate(comment="fabric@localhost", algorithm="rsa")
-        with atomic_write(f'{self.DEFAULT_PRIVATE_SSH_KEY}', overwrite=True) as f:
-            f.write(ssh_key.private_key)
-        with atomic_write(f'{self.DEFAULT_PUBLIC_SSH_KEY}', overwrite=True) as f:
-            f.write(f'{ssh_key.name} {ssh_key.public_key} {ssh_key.comment}')
-
-        # Default key in config directory
-        default_slice_priv_key_config = f'{self.config_location}/{os.environ[self.FABRIC_SLICE_PRIVATE_KEY_NAME]}'
-        default_slice_pub_key_config = f'{self.config_location}/{os.environ[self.FABRIC_SLICE_PUBLIC_KEY_NAME]}'
- 
-        if not os.path.exists(default_slice_priv_key_config):
-            with atomic_write(default_slice_priv_key_config, overwrite=True) as f:
+        # This is now made optional as JH notebook takes care of key creation
+        if sliver_keys:
+            ssh_key = FABRICSSHKey.generate(comment="fabric@localhost", algorithm="rsa")
+            with atomic_write(f'{self.DEFAULT_PRIVATE_SSH_KEY}', overwrite=True) as f:
                 f.write(ssh_key.private_key)
-
-        if not os.path.exists(default_slice_pub_key_config):
-            with atomic_write(default_slice_pub_key_config, overwrite=True) as f:
+            with atomic_write(f'{self.DEFAULT_PUBLIC_SSH_KEY}', overwrite=True) as f:
                 f.write(f'{ssh_key.name} {ssh_key.public_key} {ssh_key.comment}')
 
-        os.chmod(self.DEFAULT_PRIVATE_SSH_KEY, 0o600)
-        os.chmod(self.DEFAULT_PUBLIC_SSH_KEY, 0o644)
-        os.chmod(default_slice_priv_key_config, 0o600)
-        os.chmod(default_slice_pub_key_config, 0o644)
+            # Default key in config directory
+            default_slice_priv_key_config = f'{self.config_location}/{os.environ[self.FABRIC_SLICE_PRIVATE_KEY_NAME]}'
+            default_slice_pub_key_config = f'{self.config_location}/{os.environ[self.FABRIC_SLICE_PUBLIC_KEY_NAME]}'
+
+            if not os.path.exists(default_slice_priv_key_config):
+                with atomic_write(default_slice_priv_key_config, overwrite=True) as f:
+                    f.write(ssh_key.private_key)
+
+            if not os.path.exists(default_slice_pub_key_config):
+                with atomic_write(default_slice_pub_key_config, overwrite=True) as f:
+                    f.write(f'{ssh_key.name} {ssh_key.public_key} {ssh_key.comment}')
+
+            os.chmod(self.DEFAULT_PRIVATE_SSH_KEY, 0o600)
+            os.chmod(self.DEFAULT_PUBLIC_SSH_KEY, 0o644)
+            os.chmod(default_slice_priv_key_config, 0o600)
+            os.chmod(default_slice_pub_key_config, 0o644)
 
         self.update_permissions()
         self.custom_install_packages()
